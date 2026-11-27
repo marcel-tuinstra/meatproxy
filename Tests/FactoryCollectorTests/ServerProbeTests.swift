@@ -188,13 +188,13 @@ struct EngineRoomTests {
         #expect(try EngineRoom.file(e, at: dir) == "A-0001" && (try EngineRoom.file(e, at: dir)) == "A-0002")
         #expect(EngineRoom.openAlerts(at: dir).map(\.id) == ["A-0001", "A-0002"])
         try "---\nid: D-0001\ntitle: Prune old images on api-01?\nkind: other\nstatus: open\n---\n\n## Why\nDisk.\n"
-            .write(to: dir.appendingPathComponent("decisions/D-0001-prune.md"), atomically: true, encoding: .utf8)
+            .write(wholeTo: dir.appendingPathComponent("decisions/D-0001-prune.md"))
         let f = EngineRoom.read(at: dir)
         #expect(f.openDecisions.map(\.file) == ["decisions/D-0001-prune.md"])
     }
 
     @Test func theDevOpsAgentIsOneMoreHeartbeat() throws {
-        let center = HeartbeatCenter(runner: HeartbeatRunner(folder: try temp(), resolve: { _ in HeartbeatRunner.Launch(executable: URL(fileURLWithPath: "/usr/bin/true"), arguments: []) },
+        let center = HeartbeatCenter(runner: HeartbeatRunner(folder: try temp(), resolve: { _ in Stub.succeed },
                                                              directory: { _ in FileManager.default.temporaryDirectory }))
         var settings = ProjectSettings()
         center.wake(EngineRoom.folder.path, .alert(["A-0001"]))

@@ -94,7 +94,7 @@ public struct ProjectSettingsStore: Sendable {
     public func save(_ s: ProjectSettings) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try e.encode(s).write(to: url, options: .atomic)
+        try e.encode(s).write(wholeTo: url)
     }
 }
 

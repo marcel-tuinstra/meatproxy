@@ -8,7 +8,7 @@ import FactoryCore
     func repo(_ remote: String) throws -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("gh-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: root.appendingPathComponent(".git"), withIntermediateDirectories: true)
-        try "[remote \"origin\"]\n\turl = \(remote)\n".write(to: root.appendingPathComponent(".git/config"), atomically: true, encoding: .utf8)
+        try "[remote \"origin\"]\n\turl = \(remote)\n".write(wholeTo: root.appendingPathComponent(".git/config"))
         return root
     }
     let runs = """

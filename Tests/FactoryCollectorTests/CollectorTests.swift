@@ -72,7 +72,7 @@ struct CollectorTests {
         let home = try tempDir(), repo = home.appendingPathComponent("Code/harbor-api"), wt = home.appendingPathComponent("worktrees/harbor-fix")
         try FileManager.default.createDirectory(at: repo.appendingPathComponent(".git/worktrees/harbor-fix"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: wt, withIntermediateDirectories: true)
-        try "gitdir: \(repo.path)/.git/worktrees/harbor-fix\n".write(to: wt.appendingPathComponent(".git"), atomically: true, encoding: .utf8)
+        try "gitdir: \(repo.path)/.git/worktrees/harbor-fix\n".write(wholeTo: wt.appendingPathComponent(".git"))
         let k = ProjectResolver(home: home.path).resolve(wt.path)
         #expect(k.root == repo.path)
         #expect(k.name == "Harbor API")

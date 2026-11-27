@@ -13,11 +13,47 @@ swift run Meatproxy --fixture    # made-up demo data: for demos and every screen
 swift run Meatproxy --dump       # what the collector sees, as text
 swift run Meatproxy --costs      # each floor's sessions at API prices
 swift run Meatproxy --ops list   # the DevOps agent's ops tool: servers and actions
+swift run meatproxy-core --dump  # the same modes without the app: also on Linux and Windows
 swift test                       # FactoryCore, FactoryCollector and FactoryScenes
 scripts/make-app.sh              # the app bundle, installed in /Applications
 ```
 
-GitHub Actions runs `swift build` and `swift test` on macOS for every pull request.
+GitHub Actions runs `swift build` and `swift test` for every pull request, in three jobs: **swift test** on macOS
+(everything), **Linux** and **Windows** (what builds there, below).
+
+## macOS, Linux and Windows
+
+The campus and the app are SpriteKit, SwiftUI and AppKit, which only a Mac has. The model, the collector and the
+command line build and are tested on all three:
+
+| | macOS | Linux | Windows |
+| --- | --- | --- | --- |
+| `FactoryCore`, `FactoryCollector` and their tests | yes | yes | yes |
+| `meatproxy-core` (`--dump`, `--watch`, `--costs`, `--ops`, `--heartbeat`) | yes | yes | yes |
+| `FactoryScenes`, `Meatproxy` (the app) | yes | no | no |
+
+`Package.swift` leaves the Mac's targets out where the build does not run on a Mac. To keep the shared code shared:
+
+- **Nothing of a Mac in `FactoryCore` or `FactoryCollector` without a way round it.** What only one system has goes
+  behind `#if canImport(Security)` or `#if os(…)`, next to what the others do instead. `Platform.swift` has the two
+  that come back everywhere: `Tools` (where claude, codex, gh and ssh are, by the usual places and the PATH) and
+  `Processes` (starting a process that can be stopped, and whether the process in a lock file still lives).
+- **A folder is text in its own system's spelling.** A session file from Windows says `C:\Users\you\Projects\shop`.
+  `PathText` reads that the same on every platform, and `ProjectResolver` gives it the same floor as a Mac would.
+- **Tests start no `/bin/sh` on their own.** `Stub` (in `PlatformTests.swift`) has a program that sleeps and one that
+  exits, for every platform; a test that really needs a shell says so with `.enabled(if: Stub.hasShell)`.
+- **`Package.resolved` is the Mac app's.** SwiftTerm is named on every platform, so a build on Linux leaves that
+  file alone (CI checks it). On Windows SwiftTerm needs one package fewer and SwiftPM rewrites the file: leave that
+  change out of a commit (`git restore Package.resolved`).
+- **On Windows a write and a starting process never overlap.** Foundation there lets a process that starts take
+  along a file that is being written, and the write fails. `Files.write` (and `write(wholeTo:)`), `Files.create`
+  and `Processes.start` take turns; use them instead of `write(to:options: .atomic)`, `createFile` and `run()`.
+
+Without a Mac, or to try Linux on one, Docker runs the tests (read-only, so nothing lands in your checkout):
+
+```bash
+docker run --rm -v "$PWD":/src:ro -w /src swift:6.4-noble swift test --scratch-path /tmp/build
+```
 
 ## Window shots
 
@@ -58,7 +94,8 @@ in this repository.
 | Target | What |
 | --- | --- |
 | `FactoryCore` | The model (provider → project → session → sub-agent), states, roles, rooms, factories and their contract, the demo data |
-| `FactoryCollector` | Reads `~/.claude/projects` and `~/.codex/sessions` read-only; projects, factories, the heartbeat, the Server room and its ops tool |
+| `FactoryCollector` | Reads `~/.claude/projects` and `~/.codex/sessions` read-only; projects, factories, the heartbeat, the Server room and its ops tool; the modes without a window (`Headless`) |
+| `meatproxy-core` | The command line on every platform: `Headless`, and nothing else |
 | `FactoryScenes` | The worlds in SpriteKit: the art engine, the campus, the floors |
 | `Meatproxy` | The app: the HUD (Needs you, the inspector, settings, the terminal) |
 

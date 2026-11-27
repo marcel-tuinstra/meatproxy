@@ -13,6 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # macOS: everything, the app included. Its name stays "swift test": main requires a check with that name.
   test:
     name: swift test
     runs-on: macos-26
@@ -25,3 +26,44 @@ jobs:
         run: swift build
       - name: Test
         run: swift test
+
+  # Linux and Windows: the model, the collector and the command line (meatproxy-core). The campus and the app are
+  # SpriteKit, SwiftUI and AppKit, which only a Mac has; Package.swift leaves those targets out here.
+  linux:
+    name: Linux
+    runs-on: ubuntu-24.04
+    container: swift:6.4-noble
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Swift version
+        run: swift --version
+      - name: Build
+        run: cp Package.resolved /tmp/Package.resolved && swift build
+      - name: Test
+        run: swift test
+      - name: The command line runs
+        run: swift run meatproxy-core --dump --fixture
+      # the Mac app's versions are in Package.resolved: a build on Linux leaves them alone
+      - name: Package.resolved is unchanged
+        run: cmp Package.resolved /tmp/Package.resolved
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      # the action has no releases to pin to: this is its main branch of 29 October 2026
+      - uses: compnerd/gha-setup-swift@57fe462cd3c7b05ae8fcff79b00719312e305257
+        with:
+          swift-version: swift-6.4.3-release
+          swift-build: 6.4.3-RELEASE
+      - name: Swift version
+        run: swift --version
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
+      - name: The command line runs
+        run: swift run meatproxy-core --dump --fixture

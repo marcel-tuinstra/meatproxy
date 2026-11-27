@@ -116,7 +116,7 @@ final class SessionReader {
         items[i].failed = true
     }
 
-    private func base(_ path: Any?) -> String { ((path as? String ?? "") as NSString).lastPathComponent }
+    private func base(_ path: Any?) -> String { PathText.name(path as? String ?? "") }
 
     // MARK: Claude Code
 
@@ -230,7 +230,7 @@ final class SessionReader {
                 }
                 if let code = it["exit_code"] as? Int, code != 0 { markLastFailed() }
             case "FileChange" where !meta:
-                let names = ((it["changes"] as? [String: Any]) ?? [:]).keys.map { ($0 as NSString).lastPathComponent }.sorted()
+                let names = ((it["changes"] as? [String: Any]) ?? [:]).keys.map { PathText.name($0) }.sorted()
                 add(at, .edit, "edited " + (names.isEmpty ? "files" : names.prefix(2).joined(separator: ", ") + (names.count > 2 ? " +\(names.count - 2)" : "")))
                 if it["status"] as? String == "failed" { markLastFailed() }
             case "AgentMessage" where !meta:
@@ -291,11 +291,12 @@ final class SessionReader {
     }
 
     func session() -> Session? {
-        guard let cwd = startCwd ?? cwd, let last else { return nil }
+        // a Windows folder in one spelling, so it is the same folder as the one a URL names
+        guard let cwd = (startCwd ?? cwd).map(PathText.native), let last else { return nil }
         let raw = title ?? firstPrompt.map { Self.short($0, 60) } ?? ""
         let clean = raw.replacingOccurrences(of: #"[*_`#>]+"#, with: "", options: .regularExpression)
             .split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        let name = clean.isEmpty ? "\(provider.displayName) in \((cwd as NSString).lastPathComponent)" : clean
+        let name = clean.isEmpty ? "\(provider.displayName) in \(PathText.name(cwd))" : clean
         // the heartbeat's own CEO run (its prompt says so): named for what it is, and it never waits for you
         let heartbeat = firstPrompt?.contains("Meatproxy's heartbeat started this run") ?? false
         var s = Session(id: id, provider: provider, cwd: cwd, title: heartbeat ? "CEO run (heartbeat)" : name, branch: branch, model: model,

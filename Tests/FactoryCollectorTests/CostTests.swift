@@ -14,7 +14,7 @@ import FactoryCore
     private func write(_ lines: [[String: Any]], to url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let text = try lines.map { String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self) }.joined(separator: "\n") + "\n"
-        try text.write(to: url, atomically: true, encoding: .utf8)
+        try text.write(wholeTo: url)
     }
 
     private func append(_ lines: [[String: Any]], to url: URL) throws {

@@ -149,7 +149,7 @@ public final class HeartbeatCenter {
                 continue
             }
             if !e.heartbeat.paused || runNow {
-                let name = names[e.root] ?? (EngineRoom.isFolder(e.root) ? EngineRoom.displayName : WorldBuilder.pretty((e.root as NSString).lastPathComponent))
+                let name = names[e.root] ?? (EngineRoom.isFolder(e.root) ? EngineRoom.displayName : WorldBuilder.pretty(PathText.name(e.root)))
                 if runner.start(root: e.root, name: name, heartbeat: e.heartbeat, reason: reason, now: now,
                                 done: done.map { d in { run in d(e.root, run) } }) {
                     started.append(e.root)
@@ -217,14 +217,13 @@ public final class HeartbeatCenter {
 
     /// `gh run list` in a repo folder, with the user's own gh login; nil when gh is missing or fails (20 s at most).
     public static let systemGHRuns: @Sendable (URL) -> Data? = { repo in
-        let gh = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh"].first { FileManager.default.isExecutableFile(atPath: $0) }
-        guard let gh else { return nil }
+        guard let gh = Tools.find("gh") else { return nil }
         let p = Process(), out = Pipe()
         p.executableURL = URL(fileURLWithPath: gh)
         p.arguments = ["run", "list", "--limit", "15", "--json", "databaseId,conclusion,headBranch,status"]
         p.currentDirectoryURL = repo
         p.standardOutput = out; p.standardError = FileHandle.nullDevice; p.standardInput = FileHandle.nullDevice
-        do { try p.run() } catch { return nil }
+        do { try Processes.start(p) } catch { return nil }
         let deadline = Date().addingTimeInterval(20)
         while p.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }
         if p.isRunning { p.terminate(); return nil }

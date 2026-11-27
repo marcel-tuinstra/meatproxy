@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import FactoryCore
 
 /// An alert worth telling you about: a server or site that went down or warns, a certificate about to expire, or one
@@ -82,21 +85,32 @@ public struct SiteCheck: Equatable, Sendable {
 public enum SiteProbe {
     public static func check(_ url: String, now: Date = Date()) async -> SiteCheck {
         guard let u = URL(string: url) else { return SiteCheck(url: url, error: "not an address", checkedAt: now) }
-        let catcher = CertCatcher()
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 15
+        #if canImport(Security)
+        let catcher = CertCatcher()
         let session = URLSession(configuration: config, delegate: catcher, delegateQueue: nil)
+        #else
+        // Foundation outside Apple's platforms does not show the server's certificate: the answer is checked, and an
+        // invalid certificate still fails the request, but its expiry date stays unknown
+        let session = URLSession(configuration: config)
+        #endif
         defer { session.finishTasksAndInvalidate() }
         var req = URLRequest(url: u); req.httpMethod = "GET"; req.setValue("Meatproxy uptime check", forHTTPHeaderField: "User-Agent")
         do {
             let (_, resp) = try await session.data(for: req)
+            #if canImport(Security)
             let days = catcher.notAfter.map { Int(floor($0.timeIntervalSince(now) / 86400)) }
+            #else
+            let days: Int? = nil
+            #endif
             return SiteCheck(url: url, status: (resp as? HTTPURLResponse)?.statusCode, certDaysLeft: days, checkedAt: now)
         } catch {
             return SiteCheck(url: url, error: (error as NSError).localizedDescription, checkedAt: now)
         }
     }
 
+    #if canImport(Security)
     private final class CertCatcher: NSObject, URLSessionDelegate, @unchecked Sendable {
         var notAfter: Date?
         func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
@@ -112,4 +126,5 @@ public enum SiteProbe {
             completionHandler(.performDefaultHandling, nil)
         }
     }
+    #endif
 }

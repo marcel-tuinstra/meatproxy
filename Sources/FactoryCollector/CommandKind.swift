@@ -28,7 +28,7 @@ enum CommandKind {
         }
         guard let first = segments.first else { return (.shell, "cd") }
         let heads = segments.map { $0.prefix(3).joined(separator: " ") }
-        let prog = (first[0] as NSString).lastPathComponent
+        let prog = PathText.name(first[0])
         let sub = first.count > 1 && matches(subcommand, first[1]) ? first[1] : ""
         let label = (prog + " " + sub).trimmingCharacters(in: .whitespaces)
         if heads.contains(where: { matches(push, $0) }) {

@@ -1,15 +1,31 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(Security)
 import Security
+#endif
 import FactoryCore
 
 /// Your tokens for the wake-up sources (D61), in the macOS Keychain: never in a file, a log or the repo.
+/// Linux and Windows have no Keychain: there a token comes from the environment (`MEATPROXY_SENTRY_TOKEN`,
+/// `MEATPROXY_TRACKER_TOKEN`) and Meatproxy saves none.
 public enum Secrets {
     public enum Key: String, CaseIterable, Sendable {
         case sentry = "sentry-token", tracker = "tracker-token"
         public var label: String { self == .sentry ? "Sentry" : "Tracker" }
+        /// the variable that holds this token where there is no Keychain
+        public var variable: String { self == .sentry ? "MEATPROXY_SENTRY_TOKEN" : "MEATPROXY_TRACKER_TOKEN" }
     }
     static let service = "dev.tuinstra.meatproxy"
 
+    /// A token from the environment: nil when the variable is missing or empty.
+    static func fromEnvironment(_ k: Key, _ environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        guard let v = environment[k.variable]?.trimmingCharacters(in: .whitespacesAndNewlines), !v.isEmpty else { return nil }
+        return v
+    }
+
+    #if canImport(Security)
     public static func get(_ k: Key) -> String? {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: k.rawValue, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
@@ -27,6 +43,15 @@ public enum Secrets {
         var add = base; add[kSecValueData as String] = Data(v.utf8); add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
+    #else
+    public static func get(_ k: Key) -> String? { fromEnvironment(k) }
+
+    /// There is nowhere safe to keep a token here yet, so nothing is saved: false, unless there was nothing to save.
+    @discardableResult
+    public static func set(_ k: Key, _ value: String?) -> Bool {
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+    }
+    #endif
 }
 
 /// One HTTP exchange, so tests can answer for the network: the body and status, or nil when it failed.

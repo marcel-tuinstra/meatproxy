@@ -62,7 +62,7 @@ public enum WorldBuilder {
                 world.buildings[b].projects[k].factory = f
             } else if let b = world.buildings.firstIndex(where: { $0.provider == provider }) {
                 let p = Project(id: "\(provider.rawValue):\(f.root)", provider: provider, root: f.root,
-                                name: pretty((f.root as NSString).lastPathComponent), isChat: false, sessions: [], factory: f)
+                                name: pretty(PathText.name(f.root)), isChat: false, sessions: [], factory: f)
                 world.buildings[b].projects.append(p)
                 world.buildings[b].projects.sort { ($0.isChat ? 1 : 0, $0.name.lowercased()) < ($1.isChat ? 1 : 0, $1.name.lowercased()) }
             }
@@ -75,7 +75,7 @@ public enum WorldBuilder {
         for root in roots where !world.projects.contains(where: { !$0.isChat && $0.root == root }) {
             guard let b = world.buildings.firstIndex(where: { $0.provider == provider }) else { continue }
             world.buildings[b].projects.append(Project(id: "\(provider.rawValue):\(root)", provider: provider, root: root,
-                                                       name: pretty((root as NSString).lastPathComponent), isChat: false, sessions: []))
+                                                       name: pretty(PathText.name(root)), isChat: false, sessions: []))
             world.buildings[b].projects.sort { ($0.isChat ? 1 : 0, $0.name.lowercased()) < ($1.isChat ? 1 : 0, $1.name.lowercased()) }
         }
     }
@@ -150,7 +150,7 @@ public enum Fixture {
         }
         var world = WorldBuilder.build(withSaid, now: now) { cwd in
             cwd == "~" ? ProjectKey(root: "~", name: "", isChat: true)
-                : ProjectKey(root: cwd, name: WorldBuilder.pretty((cwd as NSString).lastPathComponent), isChat: false)
+                : ProjectKey(root: cwd, name: WorldBuilder.pretty(PathText.name(cwd)), isChat: false)
         }
         WorldBuilder.attach([factory(now: now)], to: &world)
         // GitHub (D67): the made-up Harbor API's CI on main is red, so it rains over the ChatGPT tower

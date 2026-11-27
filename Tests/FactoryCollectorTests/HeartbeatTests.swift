@@ -46,19 +46,22 @@ struct HeartbeatTests {
 
     // MARK: the runner
 
-    /// A fake runtime: /bin/sh running `script`, with the prompt as its argument.
+    /// A fake runtime: /bin/sh running `script`, with the prompt as its argument. Only where there is a /bin/sh.
     private func fake(_ script: String) -> HeartbeatRunner.Resolve {
         { r in HeartbeatRunner.Launch(executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", script, "sh", r.prompt]) }
     }
+    /// A fake runtime that just succeeds, on every platform.
+    private let quick: HeartbeatRunner.Resolve = { _ in Stub.succeed }
 
     private func waitFor(_ cond: () -> Bool) {
         let end = Date().addingTimeInterval(5)
         while !cond() && Date() < end { Thread.sleep(forTimeInterval: 0.02) }
     }
 
-    @Test func aRunWritesItsLogAndOutcome() throws {
+    @Test(.enabled(if: Stub.hasShell)) func aRunWritesItsLogAndOutcome() throws {
         let state = try tempDir(), project = try tempDir()
-        let runner = HeartbeatRunner(folder: state, resolve: fake(#"echo "woke: $1" | head -c 40"#))
+        // it runs long enough for the second start to find it running (on Linux a bare echo is over before that)
+        let runner = HeartbeatRunner(folder: state, resolve: fake(#"sleep 0.3; echo "woke: $1" | head -c 40"#))
         #expect(runner.start(root: project.path, name: "Pebble", heartbeat: Heartbeat(), reason: .runNow))
         #expect(!runner.start(root: project.path, name: "Pebble", heartbeat: Heartbeat(), reason: .runNow))   // one at a time
         runner.wait(project.path)
@@ -72,7 +75,7 @@ struct HeartbeatTests {
 
     @Test func aFailingOrMissingRuntimeSaysSo() throws {
         let state = try tempDir(), project = try tempDir()
-        let failing = HeartbeatRunner(folder: state, resolve: fake("exit 3"))
+        let failing = HeartbeatRunner(folder: state, resolve: { _ in Stub.exit(3) })
         failing.start(root: project.path, name: "P", heartbeat: Heartbeat(), reason: .runNow)
         failing.wait(project.path)
         #expect(failing.lastRun(project.path)?.outcome == .failed)
@@ -84,13 +87,15 @@ struct HeartbeatTests {
 
     @Test func anotherProcessHoldingTheLockStopsARun() throws {
         let state = try tempDir(), project = try tempDir()
-        let runner = HeartbeatRunner(folder: state, resolve: fake("true"))
-        // the launch agent (another live process: our parent) holds the lock
+        let runner = HeartbeatRunner(folder: state, resolve: quick)
+        // the launch agent (another live process) holds the lock
         try fm.createDirectory(at: state, withIntermediateDirectories: true)
-        try "\(getppid())".write(to: runner.lockURL(project.path), atomically: true, encoding: .utf8)
-        #expect(!runner.start(root: project.path, name: "P", heartbeat: Heartbeat(), reason: .runNow))
+        try Stub.whileAnotherProcessLives { pid in
+            try "\(pid)".write(wholeTo: runner.lockURL(project.path))
+            #expect(!runner.start(root: project.path, name: "P", heartbeat: Heartbeat(), reason: .runNow))
+        }
         // a lock left by a process that is gone is taken over
-        try "999999".write(to: runner.lockURL(project.path), atomically: true, encoding: .utf8)
+        try "999999".write(wholeTo: runner.lockURL(project.path))
         #expect(runner.start(root: project.path, name: "P", heartbeat: Heartbeat(), reason: .runNow))
         runner.wait(project.path)
     }
@@ -99,7 +104,7 @@ struct HeartbeatTests {
 
     @Test func answersWaitForTheirWindowAndMerge() throws {
         let project = try tempDir()
-        let center = HeartbeatCenter(runner: HeartbeatRunner(folder: try tempDir(), resolve: fake("true")))
+        let center = HeartbeatCenter(runner: HeartbeatRunner(folder: try tempDir(), resolve: quick))
         let settings = ProjectSettings(projects: [.init(root: project.path, factory: true, heartbeat: Heartbeat(paused: false))])
         let t0 = Date()
         center.wake(project.path, .answered(["D-0007"]), now: t0)
@@ -114,12 +119,12 @@ struct HeartbeatTests {
 
     @Test func runNowWorksWhenPausedAndANewFactoryDoesNotCatchUp() throws {
         let project = try tempDir()
-        let center = HeartbeatCenter(runner: HeartbeatRunner(folder: try tempDir(), resolve: fake("true")))
+        let center = HeartbeatCenter(runner: HeartbeatRunner(folder: try tempDir(), resolve: quick))
         var e = ProjectSettings.Entry(root: project.path, factory: true, heartbeat: Heartbeat(days: .everyDay, times: ["00:01"]))
         // switched on now: this morning's 00:01 beat is not caught up
         #expect(center.tick(ProjectSettings(projects: [e])).isEmpty)
         // another process (the launch agent) agrees: the factory is watched since then, so tomorrow's beat is due
-        let agent = HeartbeatCenter(runner: HeartbeatRunner(folder: center.runner.folder, resolve: fake("true")))
+        let agent = HeartbeatCenter(runner: HeartbeatRunner(folder: center.runner.folder, resolve: quick))
         #expect(agent.tick(ProjectSettings(projects: [e])).isEmpty)
         #expect(agent.scheduledBeat(e, now: Date().addingTimeInterval(86400 + 120)) != nil)
         e.heartbeat.paused = true
@@ -131,7 +136,7 @@ struct HeartbeatTests {
     /// A factory that is not set up waits for its starter files: not even Run now starts a CEO without its playbook.
     @Test func aFactoryWaitsUntilItIsSetUp() throws {
         let project = try tempDir()
-        let center = HeartbeatCenter(runner: HeartbeatRunner(folder: try tempDir(), resolve: fake("true")))
+        let center = HeartbeatCenter(runner: HeartbeatRunner(folder: try tempDir(), resolve: quick))
         center.isSetUp = { FactoryScaffold.isSetUp($0) }
         let e = ProjectSettings.Entry(root: project.path, factory: true, heartbeat: Heartbeat(paused: false))
         center.wake(project.path, .runNow)
@@ -146,7 +151,7 @@ struct HeartbeatTests {
     @Test func ciFailuresWakeOnlyWhenNew() throws {
         let project = try tempDir()
         try fm.createDirectory(at: project.appendingPathComponent("code/app/.git"), withIntermediateDirectories: true)
-        let center = HeartbeatCenter(runner: HeartbeatRunner(folder: try tempDir(), resolve: fake("true")))
+        let center = HeartbeatCenter(runner: HeartbeatRunner(folder: try tempDir(), resolve: quick))
         let settings = ProjectSettings(projects: [.init(root: project.path, factory: true)])
         nonisolated(unsafe) var runs = #"[{"databaseId": 10, "conclusion": "failure", "headBranch": "develop"}]"#
         center.ghRuns = { _ in runs.data(using: .utf8) }
@@ -167,7 +172,7 @@ struct HeartbeatTests {
 
     @Test func factoriesJSONIsTakenOver() throws {
         let folder = try tempDir()
-        try #"{"factories":["/demo/pebble"]}"#.write(to: folder.appendingPathComponent("factories.json"), atomically: true, encoding: .utf8)
+        try #"{"factories":["/demo/pebble"]}"#.write(wholeTo: folder.appendingPathComponent("factories.json"))
         let store = ProjectSettingsStore(folder: folder)
         let s = store.load()
         #expect(s.factoryRoots == ["/demo/pebble"] && s.pinnedRoots == ["/demo/pebble"])
@@ -199,7 +204,7 @@ struct HeartbeatGuardTests {
         try FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
         return u
     }
-    private let ok: HeartbeatRunner.Resolve = { _ in HeartbeatRunner.Launch(executable: URL(fileURLWithPath: "/usr/bin/true"), arguments: []) }
+    private let ok: HeartbeatRunner.Resolve = { _ in Stub.succeed }
 
     @Test func aProviderThatIsDownHoldsItsFactoriesOnly() throws {
         let p = try tempDir()
@@ -294,7 +299,7 @@ struct HeartbeatGuardTests {
     /// Every factory has its own CEO (no CEO divides itself over projects): two factories run side by side, each once.
     @Test func everyFactoryRunsItsOwnCEOAndPauseAllStopsThem() throws {
         let a = try tempDir(), b = try tempDir(), state = try tempDir()
-        let slow: HeartbeatRunner.Resolve = { _ in HeartbeatRunner.Launch(executable: URL(fileURLWithPath: "/bin/sleep"), arguments: ["1"]) }
+        let slow: HeartbeatRunner.Resolve = { _ in Stub.sleep(1) }
         let center = HeartbeatCenter(runner: HeartbeatRunner(folder: state, resolve: slow))
         var s = ProjectSettings(projects: [.init(root: a.path, factory: true), .init(root: b.path, factory: true)])
         center.wake(a.path, .runNow); center.wake(b.path, .runNow)
@@ -308,7 +313,7 @@ struct HeartbeatGuardTests {
         #expect(center.tick(s) == [a.path]); center.runner.wait(a.path)
     }
 
-    @Test func aPlanLimitInTheOutputHoldsTheRuntime() throws {
+    @Test(.enabled(if: Stub.hasShell)) func aPlanLimitInTheOutputHoldsTheRuntime() throws {
         let now = Date(timeIntervalSince1970: 1_763_200_000)
         #expect(HeartbeatRunner.planLimit(in: "Claude AI usage limit reached|1763215200", now: now) == Date(timeIntervalSince1970: 1_763_215_200))
         #expect(HeartbeatRunner.planLimit(in: "You've hit your limit · resets 2pm", now: now) == now.addingTimeInterval(3600))
@@ -332,6 +337,8 @@ struct HeartbeatGuardTests {
     }
 }
 
+// setenv and env are a Mac's and Linux's; what a run inherits is the same code on Windows
+#if !os(Windows)
 struct HeartbeatEnvironmentTests {
     /// A CEO started from inside a Claude Code session (or the desktop app) must not inherit that session.
     @Test func aRunDoesNotInheritAClaudeSession() throws {
@@ -349,6 +356,7 @@ struct HeartbeatEnvironmentTests {
         #expect(log.trimmingCharacters(in: .whitespacesAndNewlines) == "0")
     }
 }
+#endif
 
 struct HeartbeatAllowlistTests {
     /// The project's .claude/settings.json goes with the run (Claude Code ignores it in a folder not trusted yet);
@@ -358,12 +366,12 @@ struct HeartbeatAllowlistTests {
         let with = fm.temporaryDirectory.appendingPathComponent("sf-allow-\(UUID().uuidString)"), without = fm.temporaryDirectory.appendingPathComponent("sf-allow-\(UUID().uuidString)")
         try fm.createDirectory(at: with.appendingPathComponent(".claude"), withIntermediateDirectories: true)
         try fm.createDirectory(at: without, withIntermediateDirectories: true)
-        try "{}".write(to: with.appendingPathComponent(".claude/settings.json"), atomically: true, encoding: .utf8)
+        try "{}".write(wholeTo: with.appendingPathComponent(".claude/settings.json"))
         nonisolated(unsafe) var seen: [String: URL?] = [:]
         let lock = NSLock()
         let runner = HeartbeatRunner(folder: fm.temporaryDirectory.appendingPathComponent("sf-allow-state-\(UUID().uuidString)"), resolve: { r in
             lock.lock(); seen[r.prompt.contains(with.path) ? "with" : "without"] = r.settings; lock.unlock()
-            return HeartbeatRunner.Launch(executable: URL(fileURLWithPath: "/usr/bin/true"), arguments: [])
+            return Stub.succeed
         })
         #expect(runner.start(root: with.path, name: "A", heartbeat: Heartbeat(), reason: .runNow)); runner.wait(with.path)
         #expect(runner.start(root: without.path, name: "B", heartbeat: Heartbeat(), reason: .runNow)); runner.wait(without.path)
@@ -389,11 +397,13 @@ struct HeartbeatInterruptedTests {
         struct S: Encodable { var runs: [HeartbeatRun] }
         let runner = HeartbeatRunner(folder: state, resolve: { _ in nil })
         try enc.encode(S(runs: [HeartbeatRun(started: started, reason: .runNow, outcome: .running)])).write(to: runner.stateURL(project.path))
-        // a live process holds the lock (our parent): still running
-        try "\(getppid())".write(to: runner.lockURL(project.path), atomically: true, encoding: .utf8)
-        #expect(runner.lastRun(project.path)?.outcome == .running)
+        // a live process holds the lock: still running
+        try Stub.whileAnotherProcessLives { pid in
+            try "\(pid)".write(wholeTo: runner.lockURL(project.path))
+            #expect(runner.lastRun(project.path)?.outcome == .running)
+        }
         // the process is gone
-        try "999999".write(to: runner.lockURL(project.path), atomically: true, encoding: .utf8)
+        try "999999".write(wholeTo: runner.lockURL(project.path))
         let last = try #require(runner.lastRun(project.path))
         #expect(last.outcome == .failed && last.detail?.contains("closed") == true)
         #expect(!fm.fileExists(atPath: runner.lockURL(project.path).path))
@@ -408,7 +418,7 @@ struct IdeaInboxTests {
         try fm.createDirectory(at: root.appendingPathComponent("factory/ideas"), withIntermediateDirectories: true)
         // an idea already there (the CEO's or an older one) keeps its file; the next gets the next id
         try "---\nid: I-0004\ntitle: Old\nstatus: taken\ndecision: D-0002\n---\n\nOld.\n\n## CEO\nTaken.\n"
-            .write(to: root.appendingPathComponent("factory/ideas/I-0004-old.md"), atomically: true, encoding: .utf8)
+            .write(wholeTo: root.appendingPathComponent("factory/ideas/I-0004-old.md"))
         let id = try IdeaInbox.send(root: root.path, text: "  Hints that explain why\nnot just where  ")
         #expect(id == "I-0005")
         #expect(throws: IdeaInbox.Failure.self) { try IdeaInbox.send(root: root.path, text: "   ") }
@@ -419,7 +429,7 @@ struct IdeaInboxTests {
         #expect(f.ideas.first?.reply == "Taken." && f.problems.isEmpty)
         // without contract.yml a factory is version 1: no ideas box; version 2 takes ideas
         #expect(f.contract == nil && f.contractVersion == 1 && !f.takesIdeas)
-        try "contract: meatproxy-factory\nversion: 2\n".write(to: root.appendingPathComponent("factory/contract.yml"), atomically: true, encoding: .utf8)
+        try "contract: meatproxy-factory\nversion: 2\n".write(wholeTo: root.appendingPathComponent("factory/contract.yml"))
         let v2 = FactoryFinder.read(root: root.path)
         #expect(v2.contractVersion == 2 && v2.takesIdeas && !v2.newerContract)
         #expect(FactoryText.contract("contract: something-else\nversion: 2") == nil)
@@ -474,11 +484,11 @@ struct MandateTests {
         try fm.createDirectory(at: root.appendingPathComponent("factory"), withIntermediateDirectories: true)
         var m = FactoryMandate(); m.set(level: .dark)
         try MandateFile.write(m, root: root.path)
-        try "level: assistant\ngates:\n  plan: ask\n".write(to: root.appendingPathComponent("factory/autonomy.yml"), atomically: true, encoding: .utf8)
-        try "contract: meatproxy-factory\nversion: 2\n".write(to: root.appendingPathComponent("factory/contract.yml"), atomically: true, encoding: .utf8)
+        try "level: assistant\ngates:\n  plan: ask\n".write(wholeTo: root.appendingPathComponent("factory/autonomy.yml"))
+        try "contract: meatproxy-factory\nversion: 2\n".write(wholeTo: root.appendingPathComponent("factory/contract.yml"))
         #expect(!FactoryFinder.read(root: root.path).takesMandate)
         #expect(FactoryFinder.read(root: root.path).autonomy?.level == .assistant)       // v2: the CEO's autonomy.yml
-        try "contract: meatproxy-factory\nversion: 3\n".write(to: root.appendingPathComponent("factory/contract.yml"), atomically: true, encoding: .utf8)
+        try "contract: meatproxy-factory\nversion: 3\n".write(wholeTo: root.appendingPathComponent("factory/contract.yml"))
         let f = FactoryFinder.read(root: root.path)
         #expect(f.takesMandate && f.mandate?.level == .dark && f.autonomy?.level == .dark)  // v3: your mandate sets it
         #expect(Fixture.factory().takesMandate && Fixture.factory().mandate?.level == .hybrid)
@@ -521,7 +531,7 @@ struct TakeOverTests {
         let fm = FileManager.default
         let root = fm.temporaryDirectory.appendingPathComponent("sf-take-\(UUID().uuidString)"), state = fm.temporaryDirectory.appendingPathComponent("sf-take-state-\(UUID().uuidString)")
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
-        let slow: HeartbeatRunner.Resolve = { _ in HeartbeatRunner.Launch(executable: URL(fileURLWithPath: "/bin/sleep"), arguments: ["30"]) }
+        let slow: HeartbeatRunner.Resolve = { _ in Stub.sleep(30) }
         let center = HeartbeatCenter(runner: HeartbeatRunner(folder: state, resolve: slow))
         let s = ProjectSettings(projects: [.init(root: root.path, factory: true)])
         center.wake(root.path, .runNow)

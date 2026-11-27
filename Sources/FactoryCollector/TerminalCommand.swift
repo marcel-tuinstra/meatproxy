@@ -32,13 +32,14 @@ public struct TerminalCommand: Equatable, Sendable {
     /// ssh to a server with your own keys and config. nil when the host is not a plain name.
     public static func ssh(_ host: String, name: String) -> TerminalCommand? {
         guard host.range(of: #"^[A-Za-z0-9@._:-]+$"#, options: .regularExpression) != nil, !host.hasPrefix("-") else { return nil }
-        return TerminalCommand(title: "ssh \(name)", executable: "/usr/bin/ssh", args: [host], cwd: NSHomeDirectory())
+        return TerminalCommand(title: "ssh \(name)", executable: Tools.ssh(), args: [host], cwd: NSHomeDirectory())
     }
 
     /// Follows a log as it grows (a CEO's or the DevOps agent's run). nil when the file is not there.
     public static func follow(_ path: String, title: String) -> TerminalCommand? {
         guard FileManager.default.fileExists(atPath: path) else { return nil }
-        return TerminalCommand(title: title, executable: "/usr/bin/tail", args: ["-n", "400", "-f", path], cwd: nil)
+        let tail = "/usr/bin/tail"
+        return TerminalCommand(title: title, executable: Tools.isProgram(tail) ? tail : Tools.find("tail") ?? tail, args: ["-n", "400", "-f", path], cwd: nil)
     }
 
     /// The environment a tab runs in: yours, with the ssh-agent that holds your keys, the usual tool paths, a colour
@@ -46,7 +47,7 @@ public struct TerminalCommand: Equatable, Sendable {
     public static func environment(_ base: [String: String] = ProcessInfo.processInfo.environment) -> [String] {
         var env = UserEnvironment.withSSHAgent(base)
         for k in env.keys where k.hasPrefix("CLAUDE") || k == "ANTHROPIC_BASE_URL" { env[k] = nil }
-        env["PATH"] = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin", NSHomeDirectory() + "/.local/bin", env["PATH"] ?? ""].joined(separator: ":")
+        Tools.addSearchPath(to: &env)
         env["TERM"] = "xterm-256color"; env["COLORTERM"] = "truecolor"
         env["LANG"] = env["LANG"] ?? "en_US.UTF-8"
         env["HOME"] = env["HOME"] ?? NSHomeDirectory()

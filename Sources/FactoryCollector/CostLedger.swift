@@ -74,7 +74,7 @@ public final class CostLedger: @unchecked Sendable {
         guard let store else { return }
         lock.lock(); let snapshot = Saved(version: Self.version, files: files); lock.unlock()
         try? FileManager.default.createDirectory(at: store.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if let data = try? JSONEncoder().encode(snapshot) { try? data.write(to: store, options: .atomic) }
+        if let data = try? JSONEncoder().encode(snapshot) { try? data.write(wholeTo: store) }
     }
 
     func read(_ url: URL, into st: inout FileState) {

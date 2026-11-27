@@ -18,7 +18,7 @@ struct FactoryTests {
         for (rel, text) in Fixture.factoryFiles(now: now) {
             let u = root.appendingPathComponent(rel)
             try fm.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try text.write(to: u, atomically: true, encoding: .utf8)
+            try text.write(wholeTo: u)
         }
     }
 
@@ -153,7 +153,7 @@ struct FactoryTests {
 
     @Test func answeringWritesTheFileAtomically() throws {
         let dir = try tempDir(), url = dir.appendingPathComponent("D-0001-hint.md")
-        try Self.open.write(to: url, atomically: true, encoding: .utf8)
+        try Self.open.write(wholeTo: url)
         try DecisionAnswer.answer(url, yes: true, note: nil, at: Self.at, timeZone: Self.cet)
         let d = try #require(FactoryText.decision(try String(contentsOf: url, encoding: .utf8), file: "x"))
         #expect(d.status == .yes)
@@ -164,12 +164,12 @@ struct FactoryTests {
     @Test func anAlreadyAnsweredQuestionIsRefusedAndUntouched() throws {
         let dir = try tempDir(), url = dir.appendingPathComponent("D-0001-hint.md")
         let answered = Self.open.replacingOccurrences(of: "status: open  ", with: "status: no    ")
-        try answered.write(to: url, atomically: true, encoding: .utf8)
+        try answered.write(wholeTo: url)
         #expect(throws: DecisionAnswer.Failure.notOpen("no")) { try DecisionAnswer.answer(url, yes: true, note: "changed my mind", at: Self.at) }
         #expect(try String(contentsOf: url, encoding: .utf8) == answered)
         // answering twice: the second is refused
         let dir2 = try tempDir(), url2 = dir2.appendingPathComponent("D-0001-hint.md")
-        try Self.open.write(to: url2, atomically: true, encoding: .utf8)
+        try Self.open.write(wholeTo: url2)
         try DecisionAnswer.answer(url2, yes: true, note: nil, at: Self.at)
         #expect(throws: DecisionAnswer.Failure.notOpen("yes")) { try DecisionAnswer.answer(url2, yes: false, note: nil, at: Self.at) }
     }
@@ -179,7 +179,7 @@ struct FactoryTests {
         for (k, text) in ["no front matter", "---\nid: D-1\ntitle: Ship?\n---\nno status", "---\nid: D-1\ntitle: Ship?\nstatus: maybe\n---\n",
                           "---\nid: D-1\nstatus: open\n"].enumerated() {
             let url = dir.appendingPathComponent("D-000\(k)-bad.md")
-            try text.write(to: url, atomically: true, encoding: .utf8)
+            try text.write(wholeTo: url)
             #expect(throws: DecisionAnswer.Failure.self) { try DecisionAnswer.answer(url, yes: true, note: "x", at: Self.at) }
             #expect(try String(contentsOf: url, encoding: .utf8) == text)
         }
@@ -260,7 +260,7 @@ struct AppSupportTests {
         let base = fm.temporaryDirectory.appendingPathComponent("sf-support-\(UUID().uuidString)")
         let old = base.appendingPathComponent("Software Factory")
         try fm.createDirectory(at: old, withIntermediateDirectories: true)
-        try "{\"servers\":[]}".write(to: old.appendingPathComponent("servers.json"), atomically: true, encoding: .utf8)
+        try "{\"servers\":[]}".write(wholeTo: old.appendingPathComponent("servers.json"))
         #expect(AppSupport.migrateLegacyFolder(in: base))
         #expect(fm.fileExists(atPath: base.appendingPathComponent("Meatproxy/servers.json").path))
         #expect(!fm.fileExists(atPath: old.path))

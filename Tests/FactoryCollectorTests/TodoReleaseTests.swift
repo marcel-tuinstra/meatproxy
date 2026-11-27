@@ -138,9 +138,9 @@ struct TodoReleaseTests {
         defer { try? fm.removeItem(at: root) }
         // the CEO's own D-0007 is taken: the release gets the next number
         try decision("D-0007", kind: "ship", status: "no", workstreams: "W-002")
-            .write(to: root.appendingPathComponent("factory/decisions/D-0007-earlier.md"), atomically: true, encoding: .utf8)
+            .write(wholeTo: root.appendingPathComponent("factory/decisions/D-0007-earlier.md"))
         for id in ["W-002", "W-003"] {
-            try workstream(id, phase: "ship").write(to: root.appendingPathComponent("factory/workstreams/\(id)-x.md"), atomically: true, encoding: .utf8)
+            try workstream(id, phase: "ship").write(wholeTo: root.appendingPathComponent("factory/workstreams/\(id)-x.md"))
         }
         let before = FactoryFinder.read(root: root.path)
         #expect(before.readyToRelease.count == 2)
@@ -189,7 +189,7 @@ struct NewFileTests {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let url = dir.appendingPathComponent("I-0003-idea.md")
-        try "the CEO's file".write(to: url, atomically: true, encoding: .utf8)
+        try "the CEO's file".write(wholeTo: url)
         #expect(try NewFile.create(url, text: "Meatproxy's file") == false)
         #expect(try String(contentsOf: url, encoding: .utf8) == "the CEO's file")
         let fresh = dir.appendingPathComponent("I-0004-idea.md")
@@ -248,7 +248,7 @@ struct SendToDevOpsTests {
         Look at the runner's service.
 
         ## Answer
-        """.write(to: root.appendingPathComponent(file), atomically: true, encoding: .utf8)
+        """.write(wholeTo: root.appendingPathComponent(file))
         let d = try #require(FactoryFinder.read(root: root.path).decisions.first)
 
         let id = try EngineRoom.request(d, factory: "Pebble Puzzles", root: root.path, at: engine)
@@ -286,7 +286,7 @@ struct SendToDevOpsTests {
         2026-11-24T13:05:44Z db-01 logs postgres → exit 0
 
         """
-        try log.write(to: dir.appendingPathComponent("journal/actions.log"), atomically: true, encoding: .utf8)
+        try log.write(wholeTo: dir.appendingPathComponent("journal/actions.log"))
         let last = try #require(EngineRoom.lastAction(since: start, at: dir))
         #expect(last.server == "db-01")
         #expect(last.at == iso.date(from: "2026-11-24T13:05:44Z"))

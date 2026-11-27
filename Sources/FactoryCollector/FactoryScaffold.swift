@@ -51,7 +51,7 @@ public enum FactoryScaffold {
             guard !fm.fileExists(atPath: u.path) else { continue }
             try fm.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
             // withoutOverwriting: a file that appeared meanwhile is not replaced
-            try Data(f.text.utf8).write(to: u, options: .withoutOverwriting)
+            try Files.write(Data(f.text.utf8), to: u, options: .withoutOverwriting)
             written.append(f.path)
         }
         if files.contains(where: { $0.path.hasPrefix("factory/") }) {

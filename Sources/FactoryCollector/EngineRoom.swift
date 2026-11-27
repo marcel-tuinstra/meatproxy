@@ -20,8 +20,8 @@ public enum EngineRoom {
         for sub in ["alerts", "decisions", "journal", ".claude"] {
             try fm.createDirectory(at: folder.appendingPathComponent(sub), withIntermediateDirectories: true)
         }
-        try "contract: \(contract)\nversion: \(version)\n".write(to: folder.appendingPathComponent("contract.yml"), atomically: true, encoding: .utf8)
-        try readme.write(to: folder.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        try "contract: \(contract)\nversion: \(version)\n".write(wholeTo: folder.appendingPathComponent("contract.yml"))
+        try readme.write(wholeTo: folder.appendingPathComponent("README.md"))
         let iso = ISO8601DateFormatter()
         let list: [[String: Any]] = servers.map { c in
             let s = checks.first { $0.id == c.id }
@@ -35,13 +35,13 @@ public enum EngineRoom {
             ]
         }
         let data = try JSONSerialization.data(withJSONObject: ["servers": list], options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-        try data.write(to: folder.appendingPathComponent("servers.json"), options: .atomic)
+        try data.write(wholeTo: folder.appendingPathComponent("servers.json"))
         let settings: [String: Any] = ["permissions": [
             "allow": ["Read", "Edit", "Write", "Glob", "Grep", "TodoWrite", "Bash(\(opsTool) --ops:*)", "Bash(date)"],
             "deny": ["Bash(ssh:*)", "Bash(scp:*)", "Bash(sudo:*)", "Bash(rm -rf:*)", "Bash(curl:*)"],
         ]]
         try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-            .write(to: folder.appendingPathComponent(".claude/settings.json"), options: .atomic)
+            .write(wholeTo: folder.appendingPathComponent(".claude/settings.json"))
     }
 
     /// The workspace's own copy of the formats (docs/contracts/engine-room.md): what the agent writes, exactly.
@@ -133,7 +133,7 @@ public enum EngineRoom {
             ## Agent
 
             """
-            guard fm.createFile(atPath: url.path, contents: Data(text.utf8)) else { throw CocoaError(.fileWriteUnknown) }
+            guard Files.create(url, contents: Data(text.utf8)) else { throw CocoaError(.fileWriteUnknown) }
             return id
         }
     }
@@ -300,7 +300,7 @@ public enum OpsTool {
         let line = "\(ISO8601DateFormatter().string(from: Date())) \(server.name) \(action)\(arg.map { " " + $0 } ?? "") → \(code == 2 && out.hasPrefix("refused") ? "refused" : "exit \(code)")\n"
         try? FileManager.default.createDirectory(at: log.deletingLastPathComponent(), withIntermediateDirectories: true)
         if let h = try? FileHandle(forWritingTo: log) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() }
-        else { try? line.write(to: log, atomically: true, encoding: .utf8) }
+        else { try? line.write(wholeTo: log) }
         return (code, out)
     }
 

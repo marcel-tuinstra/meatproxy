@@ -71,19 +71,22 @@ public enum UserEnvironment {
     /// `ssh-add -l` against a socket: exit 0 means the agent answers and holds at least one key.
     static func hasKeys(_ sock: String) -> Bool {
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh-add")
+        p.executableURL = URL(fileURLWithPath: Tools.ssh("ssh-add"))
         p.arguments = ["-l"]
         p.environment = ["SSH_AUTH_SOCK": sock, "HOME": NSHomeDirectory()]
         p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice; p.standardInput = FileHandle.nullDevice
-        do { try p.run() } catch { return false }
+        do { try Processes.start(p) } catch { return false }
         let deadline = Date().addingTimeInterval(3)
         while p.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
         if p.isRunning { p.terminate(); return false }
         return p.terminationStatus == 0
     }
 
-    /// `launchctl getenv SSH_AUTH_SOCK`: the agent macOS starts for your login session.
+    /// `launchctl getenv SSH_AUTH_SOCK`: the agent macOS starts for your login session. Only a Mac has launchd.
     static var launchdSSHAgent: String? {
+        #if !os(macOS)
+        return nil
+        #else
         let p = Process(), out = Pipe()
         p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         p.arguments = ["getenv", "SSH_AUTH_SOCK"]
@@ -92,6 +95,7 @@ public enum UserEnvironment {
         p.waitUntilExit()
         let s = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         return s.isEmpty ? nil : s
+        #endif
     }
 }
 
@@ -154,7 +158,7 @@ public struct ServerSettingsStore: Sendable {
     public func save(_ servers: [ServerConfig]) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try e.encode(File(servers: servers)).write(to: url, options: .atomic)
+        try e.encode(File(servers: servers)).write(wholeTo: url)
     }
 }
 
@@ -276,16 +280,16 @@ public enum ServerProbe {
         return Result(state: .ok, detail: parts.isEmpty ? "reachable" : parts.joined(separator: " · "), metrics: m)
     }
 
-    /// Runs /usr/bin/ssh, with nothing on stdin, stopped after `timeout`.
+    /// Runs the system's ssh, with nothing on stdin, stopped after `timeout`.
     public static let run: Runner = { arguments, timeout in
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        p.executableURL = URL(fileURLWithPath: Tools.ssh())
         p.arguments = arguments
         p.environment = UserEnvironment.withSSHAgent()
         p.standardInput = FileHandle.nullDevice
         let out = Pipe(), err = Pipe()
         p.standardOutput = out; p.standardError = err
-        do { try p.run() } catch { return Output(status: -1, stdout: "", stderr: error.localizedDescription) }
+        do { try Processes.start(p) } catch { return Output(status: -1, stdout: "", stderr: error.localizedDescription) }
         // read both pipes while it runs, so a chatty server cannot fill a pipe and stall it
         let group = DispatchGroup()
         nonisolated(unsafe) var o = Data(), e = Data()

@@ -23,7 +23,7 @@ public struct FactorySettingsStore: Sendable {
     public func save(_ roots: [String]) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        try e.encode(File(factories: roots)).write(to: url, options: .atomic)
+        try e.encode(File(factories: roots)).write(wholeTo: url)
     }
 }
 
@@ -78,7 +78,7 @@ public enum DecisionAnswer {
         let out = try answered(text, yes: yes, note: note, at: now, timeZone: timeZone)
         // the CEO may write the file at the same moment: only replace what we read
         guard (try? String(contentsOf: url, encoding: .utf8)) == text else { throw Failure.changed }
-        do { try out.write(to: url, atomically: true, encoding: .utf8) } catch { throw Failure.unreadable(error.localizedDescription) }
+        do { try out.write(wholeTo: url) } catch { throw Failure.unreadable(error.localizedDescription) }
     }
 
     /// The file's text with the answer in it (the pure part of `answer`, for tests).
@@ -140,6 +140,11 @@ public enum DecisionAnswer {
 /// that appeared in the meantime is never replaced. False when the name is taken; throws on any other failure.
 public enum NewFile {
     public static func create(_ url: URL, text: String) throws -> Bool {
+        #if os(Windows)
+        // Windows has no O_EXCL; Foundation's own "never overwrite" asks the system for the same (CREATE_NEW)
+        do { try Files.write(Data(text.utf8), to: url, options: .withoutOverwriting); return true }
+        catch let e as CocoaError where e.code == .fileWriteFileExists { return false }
+        #else
         let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
         if fd < 0 {
             if errno == EEXIST { return false }
@@ -150,6 +155,7 @@ public enum NewFile {
         let ok = data.withUnsafeBytes { write(fd, $0.baseAddress, data.count) == data.count }
         if !ok { throw NSError(domain: NSPOSIXErrorDomain, code: Int(EIO), userInfo: [NSLocalizedDescriptionKey: "short write"]) }
         return true
+        #endif
     }
 }
 
@@ -278,6 +284,6 @@ public enum MandateFile {
     public static func write(_ m: FactoryMandate, root: String) throws {
         let u = URL(fileURLWithPath: root).appendingPathComponent("factory/mandate.yml")
         try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try m.yaml.write(to: u, atomically: true, encoding: .utf8)
+        try m.yaml.write(wholeTo: u)
     }
 }

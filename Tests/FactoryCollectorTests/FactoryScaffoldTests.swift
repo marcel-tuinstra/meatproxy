@@ -11,7 +11,7 @@ import FactoryCore
         for (rel, text) in files {
             let u = root.appendingPathComponent(rel)
             try FileManager.default.createDirectory(at: u.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try text.write(to: u, atomically: true, encoding: .utf8)
+            try text.write(wholeTo: u)
         }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return root.path

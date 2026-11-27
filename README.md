@@ -73,7 +73,8 @@ scripts/make-app.sh
 ```
 
 <sub>*Not available in stores. Not available anywhere, really: you build it yourself. Requires macOS 15 and Xcode 26.
-Everything else, from factories to servers: [SETUP.md](SETUP.md).</sub>
+On Linux or Windows there is no campus yet, but the command line runs. Everything else, from factories to servers:
+[SETUP.md](SETUP.md).</sub>
 
 ### What people are saying
 

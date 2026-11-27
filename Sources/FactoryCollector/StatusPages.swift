@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import FactoryCore
 
 /// The status pages you watch (D69): the providers your factories run on, GitHub, and any of your own. Kept in
@@ -44,7 +47,7 @@ public enum StatusSourcesStore {
     public static func save(_ s: [StatusSource]) {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let e = JSONEncoder(); e.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try? e.encode(s).write(to: url, options: .atomic)
+        try? e.encode(s).write(wholeTo: url)
     }
 }
 

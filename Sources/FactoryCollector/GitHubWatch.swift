@@ -66,14 +66,13 @@ public final class GitHubWatch: @unchecked Sendable {
 
     /// gh with your own login (20 s at most).
     public static let systemGH: GH = { repo, args in
-        let gh = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh"].first { FileManager.default.isExecutableFile(atPath: $0) }
-        guard let gh else { return nil }
+        guard let gh = Tools.find("gh") else { return nil }
         let p = Process(), out = Pipe()
         p.executableURL = URL(fileURLWithPath: gh)
         p.arguments = args
         p.currentDirectoryURL = repo
         p.standardOutput = out; p.standardError = FileHandle.nullDevice; p.standardInput = FileHandle.nullDevice
-        do { try p.run() } catch { return nil }
+        do { try Processes.start(p) } catch { return nil }
         let data = out.fileHandleForReading.readDataToEndOfFile()
         let deadline = Date().addingTimeInterval(20)
         while p.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }

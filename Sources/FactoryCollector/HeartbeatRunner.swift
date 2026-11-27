@@ -51,11 +51,8 @@ public final class HeartbeatRunner: @unchecked Sendable {
     /// The project's allowlist is passed with --settings: Claude Code ignores a folder's own settings until you trust
     /// that folder interactively, but always honours settings given on the command line.
     /// Where a CLI is (an app started from the Finder has no shell PATH): Homebrew, /usr/local, ~/.local, Claude's own.
-    public static func cli(_ name: String) -> String? {
-        let home = NSHomeDirectory()
-        let candidates = ["/opt/homebrew/bin/\(name)", "/usr/local/bin/\(name)", "\(home)/.local/bin/\(name)", "\(home)/.claude/local/\(name)"]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }
+    /// On Linux the PATH after those; on Windows ~\.local\bin, Codex's own folder, then the PATH (`Tools`).
+    public static func cli(_ name: String) -> String? { Tools.find(name) }
 
     public static let systemLaunch: Resolve = { r in
         guard let path = cli(r.runtime == .claude ? "claude" : "codex") else { return nil }
@@ -143,7 +140,7 @@ public final class HeartbeatRunner: @unchecked Sendable {
     // MARK: state
 
     static func key(_ root: String) -> String {
-        let base = (root as NSString).lastPathComponent.lowercased().replacingOccurrences(of: #"[^a-z0-9]+"#, with: "-", options: .regularExpression)
+        let base = PathText.name(root).lowercased().replacingOccurrences(of: #"[^a-z0-9]+"#, with: "-", options: .regularExpression)
         var h: UInt32 = 2166136261
         for b in root.utf8 { h = (h ^ UInt32(b)) &* 16777619 }
         return "\(base)-\(String(h, radix: 16))"
@@ -177,7 +174,7 @@ public final class HeartbeatRunner: @unchecked Sendable {
     private func writeState(_ root: String, _ s: State) {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601; enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try? enc.encode(s).write(to: stateURL(root), options: .atomic)
+        try? enc.encode(s).write(wholeTo: stateURL(root))
     }
 
     /// The latest run (still running, or how it ended).
@@ -202,7 +199,7 @@ public final class HeartbeatRunner: @unchecked Sendable {
     func lockHeld(_ root: String) -> Bool {
         guard let text = try? String(contentsOf: lockURL(root), encoding: .utf8),
               let pid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)) else { return false }
-        return kill(pid, 0) == 0
+        return Processes.isAlive(pid)
     }
 
     /// The newest CI run id already seen for a repo (so an old failure never wakes the CEO twice).
@@ -249,7 +246,7 @@ public final class HeartbeatRunner: @unchecked Sendable {
         var m = (try? JSONDecoder().decode([String: Date].self, from: Data(contentsOf: limitsURL))) ?? [:]
         m[runtime.rawValue] = until
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        try? JSONEncoder().encode(m).write(to: limitsURL, options: .atomic)
+        try? JSONEncoder().encode(m).write(wholeTo: limitsURL)
     }
 
     /// A run's output says the plan's limit was hit: until when (the reset it names, or an hour from now). Nil otherwise.
@@ -270,10 +267,10 @@ public final class HeartbeatRunner: @unchecked Sendable {
         let url = lockURL(root)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         if let text = try? String(contentsOf: url, encoding: .utf8), let pid = Int32(text.trimmingCharacters(in: .whitespacesAndNewlines)),
-           pid != getpid(), kill(pid, 0) == 0 {
+           pid != Processes.own, Processes.isAlive(pid) {
             return false
         }
-        return (try? "\(getpid())".write(to: url, atomically: true, encoding: .utf8)) != nil
+        return (try? "\(Processes.own)".write(wholeTo: url)) != nil
     }
     func releaseLock(_ root: String) { try? FileManager.default.removeItem(at: lockURL(root)) }
 
@@ -326,7 +323,7 @@ public final class HeartbeatRunner: @unchecked Sendable {
         }
         let log = logURL(root, started: now)
         try? FileManager.default.createDirectory(at: log.deletingLastPathComponent(), withIntermediateDirectories: true)
-        FileManager.default.createFile(atPath: log.path, contents: nil)
+        Files.create(log, contents: nil)
         let p = Process()
         p.executableURL = launch.executable
         p.arguments = launch.arguments
@@ -334,7 +331,7 @@ public final class HeartbeatRunner: @unchecked Sendable {
         var env = UserEnvironment.withSSHAgent()
         // a CEO is its own session: nothing of a Claude Code session the app may have been started from leaks in
         for k in env.keys where k.hasPrefix("CLAUDE") || k == "ANTHROPIC_BASE_URL" { env[k] = nil }
-        env["PATH"] = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin", NSHomeDirectory() + "/.local/bin", env["PATH"] ?? ""].joined(separator: ":")
+        Tools.addSearchPath(to: &env)
         p.environment = env
         if let fh = try? FileHandle(forWritingTo: log) { p.standardOutput = fh; p.standardError = fh }
         p.standardInput = FileHandle.nullDevice
@@ -372,7 +369,7 @@ public final class HeartbeatRunner: @unchecked Sendable {
             if let done { DispatchQueue.main.async { done(run) } }
         }
         do {
-            try p.run()
+            try Processes.start(p)
         } catch {
             lock.lock()
             running[root] = nil
@@ -384,7 +381,7 @@ public final class HeartbeatRunner: @unchecked Sendable {
             return false
         }
         // the lock now names the CEO process itself: if the app closes, the run still holds it until it really ends
-        try? "\(p.processIdentifier)".write(to: lockURL(root), atomically: true, encoding: .utf8)
+        try? "\(p.processIdentifier)".write(wholeTo: lockURL(root))
         DispatchQueue.global().asyncAfter(deadline: .now() + Self.timeout, execute: timer)
         return true
     }
