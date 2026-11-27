@@ -151,7 +151,7 @@ public final class HeartbeatCenter {
             if !e.heartbeat.paused || runNow {
                 let name = names[e.root] ?? (EngineRoom.isFolder(e.root) ? EngineRoom.displayName : WorldBuilder.pretty((e.root as NSString).lastPathComponent))
                 if runner.start(root: e.root, name: name, heartbeat: e.heartbeat, reason: reason, now: now,
-                                done: done.map { d in { run in d(e.root, run) } }) {
+                                done: done.map { d in let root = e.root; return { @Sendable run in d(root, run) } }) {
                     started.append(e.root)
                 }
             }

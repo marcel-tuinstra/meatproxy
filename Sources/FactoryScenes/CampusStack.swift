@@ -122,7 +122,6 @@ extension CampusScene {
         n.addChild(shape([A, Bc, C, D], fill: floorCol, stroke: Self.ink, width: 0.8 * px))
         // a lighter band where the walls were cut, so it reads as a section
         let rim = shape([A, Bc, Q(1, 0.06), Q(0, 0.06)], fill: SKColor(white: 1, alpha: 0.18)); n.addChild(rim)
-        let at = p.sessions.filter { $0.state(now: world.now) != .done }.prefix(4)
         // (the people and desks are in the room itself, seen through the facade: the ceiling stays a quiet slab)
         return n
     }
