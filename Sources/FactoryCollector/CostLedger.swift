@@ -213,7 +213,7 @@ public final class CostLedger: @unchecked Sendable {
         return out
     }
 
-    nonisolated(unsafe) private static let dayFormat: DateFormatter = {
+    private static let dayFormat: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX"); return f
     }()
     nonisolated(unsafe) private static let isoFraction: ISO8601DateFormatter = {
